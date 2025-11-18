@@ -1,0 +1,5 @@
+{
+  "name": "AI Blog Generator",
+  "description": "An end-to-end blog generator that creates publish-ready posts through a visible, multi-step process including research, competitive analysis, keyword identification, and outlining.",
+  "requestFramePermissions": []
+}
