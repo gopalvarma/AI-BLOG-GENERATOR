@@ -41,6 +41,16 @@ export interface BrandVoiceSystem {
   messagingPillars: string[];
   audienceResonance: string;
   voiceInActionExamples: string[];
+  keyRules: string[];
+  targetAudience: string;
+}
+
+export interface SavedBrandVoice {
+  id: string;
+  name: string;
+  industry: string;
+  system: BrandVoiceSystem;
+  createdAt: number;
 }
 
 export interface ExpertBrandInputs {
@@ -95,6 +105,7 @@ export interface OutlineSection {
 export interface BlogGenerationProcess {
   id: string;
   topic: string;
+  brandName?: string;
   platform: Platform;
   status: GenerationStep;
   currentStep: 'research' | 'competition' | 'keywords' | 'outline' | 'generation' | 'done' | null;
@@ -104,4 +115,6 @@ export interface BlogGenerationProcess {
   keywords: KeywordsData | null;
   outline: OutlineSection[] | null;
   blogPost: string | null;
+  imageUrl?: string | null;
+  system?: BrandVoiceSystem; // Snapshot of the system used for this generation
 }

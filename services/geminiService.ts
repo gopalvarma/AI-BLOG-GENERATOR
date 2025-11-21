@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
     BrandVoiceSystem, 
@@ -42,7 +43,9 @@ const componentSchemas: { [key in keyof BrandVoiceSystem]: any } = {
     },
     messagingPillars: { type: Type.ARRAY, items: { type: Type.STRING }, description: "3-4 core themes or topics the brand consistently talks about." },
     audienceResonance: { type: Type.STRING, description: "How the voice should connect with the target audience, what it should make them feel." },
-    voiceInActionExamples: { type: Type.ARRAY, items: { type: Type.STRING }, description: "3 short examples of the brand voice in use (e.g., a headline, a social media post)." }
+    voiceInActionExamples: { type: Type.ARRAY, items: { type: Type.STRING }, description: "3 short examples of the brand voice in use (e.g., a headline, a social media post)." },
+    keyRules: { type: Type.ARRAY, items: { type: Type.STRING }, description: "3-5 key 'Do and Don't' formatting or behavioral rules for the brand voice." },
+    targetAudience: { type: Type.STRING, description: "A description of the primary target audience demographics and psychographics." }
 };
 
 const brandSystemSchema = {
@@ -63,23 +66,24 @@ const parseJsonFromText = (text: string) => {
         const firstBracket = text.indexOf('[');
 
         if (firstBrace === -1 && firstBracket === -1) {
-            throw new Error("Could not find JSON start in the response.");
-        }
-        
-        let startIndex;
-        if (firstBrace === -1 || (firstBracket !== -1 && firstBracket < firstBrace)) {
-            // It's an array
-            startIndex = firstBracket;
-            const lastBracket = text.lastIndexOf(']');
-            if (lastBracket > startIndex) {
-                jsonString = text.substring(startIndex, lastBracket + 1);
-            }
+            // Fallback: assume it's already JSON or try to parse directly
+            // We'll let JSON.parse fail if it's not valid
         } else {
-            // It's an object
-            startIndex = firstBrace;
-            const lastBrace = text.lastIndexOf('}');
-            if (lastBrace > startIndex) {
-                jsonString = text.substring(startIndex, lastBrace + 1);
+            let startIndex;
+            if (firstBrace === -1 || (firstBracket !== -1 && firstBracket < firstBrace)) {
+                // It's an array
+                startIndex = firstBracket;
+                const lastBracket = text.lastIndexOf(']');
+                if (lastBracket > startIndex) {
+                    jsonString = text.substring(startIndex, lastBracket + 1);
+                }
+            } else {
+                // It's an object
+                startIndex = firstBrace;
+                const lastBrace = text.lastIndexOf('}');
+                if (lastBrace > startIndex) {
+                    jsonString = text.substring(startIndex, lastBrace + 1);
+                }
             }
         }
     }
@@ -126,37 +130,6 @@ export const generateBrandVoiceSystem = async (
   
   return JSON.parse(response.text);
 };
-
-
-export const generateBrandVoiceFromURL = async (
-  url: string,
-  name: string,
-  industry: string
-): Promise<BrandVoiceSystem> => {
-  const prompt = `You are a world-class branding and marketing analyst. Your task is to analyze the content at the blog URL provided for the company "${name}" in the "${industry}" industry.
-
-  URL to analyze: ${url}
-  
-  Instructions:
-  1. Use your search tool to access and read the content of the page at the provided URL.
-  2. Analyze the text for its underlying brand voice. Pay close attention to the writing style, tone, vocabulary, sentence structure, and recurring themes.
-  3. Based on your analysis, generate a complete and cohesive Brand Voice System.
-  4. Infer the brand's essence, personality, audience, and messaging pillars from the content.
-  5. If the brand name or industry is not obvious from the URL content, use the provided name ("${name}") and industry ("${industry}") as the primary context.
-  
-  Your output must be a JSON object that strictly conforms to the provided schema. The JSON object should be enclosed in a markdown code block with the language identifier 'json'.`;
-  
-  const response = await ai.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-        tools: [{googleSearch: {}}],
-    }
-  });
-  
-  return parseJsonFromText(response.text);
-};
-
 
 export const regenerateBrandVoiceComponent = async (
   system: BrandVoiceSystem,
@@ -208,7 +181,7 @@ export const performResearch = async (topic: string, system: BrandVoiceSystem, p
     The JSON object should have two keys: "sources" (an array of objects with "title" and "uri") and "insights" (an array of strings).
     `;
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-3-pro-preview',
         contents: prompt,
         config: {
             tools: [{googleSearch: {}}],
@@ -231,7 +204,7 @@ export const analyzeCompetition = async (topic: string, researchData: ResearchDa
     The JSON object should have two keys: "competitors" (an array of objects with "title" and "uri") and "analysis" (a string).
     `;
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-3-pro-preview',
         contents: prompt,
         config: {
             tools: [{googleSearch: {}}],
@@ -277,18 +250,19 @@ export const createOutlineWithIntent = async (topic: string, keywords: KeywordsD
     -   **Key Research:** ${researchData.insights.join('; ')}
 
     The outline structure must be appropriate for the target platform.
-    - For a 'Blog / Article', create a standard Intro/Body/Conclusion structure.
-    - For an 'Instagram Post', create an outline for a carousel (e.g., Hook, Point 1, Point 2, CTA).
-    - For 'Ad Copy', structure it as Headline, Body, CTA.
+    - For a 'Blog / Article', use standard headings (Introduction, H2s, Conclusion).
+    - For 'Instagram', use (Hook, Value, Call to Action).
+    - For 'LinkedIn', use (Hook, Insight, Discussion Question).
 
-    For **EACH** item in the outline, you **MUST** provide a clear, specific 'intent'. The intent explains the strategic purpose of that section and what it achieves for the audience.
+    For each section, provide:
+    1. "sectionTitle": The heading or part name.
+    2. "intent": A brief description of what this section should achieve (e.g., "Hook the reader with a statistic", "Explain the benefits").
 
-    Example Intent: "Acknowledge the reader's primary challenge with [X] to build empathy before introducing our framework."
-    
-    Incorporate the keywords naturally into the section titles where it makes sense.
+    Return a JSON array of objects.
     `;
+    
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-pro',
+        model,
         contents: prompt,
         config: {
             responseMimeType: "application/json",
@@ -299,96 +273,121 @@ export const createOutlineWithIntent = async (topic: string, keywords: KeywordsD
                     properties: {
                         sectionTitle: { type: Type.STRING },
                         intent: { type: Type.STRING }
-                    },
-                    required: ['sectionTitle', 'intent']
+                    }
                 }
             }
         }
     });
     return JSON.parse(response.text);
-};
-
+}
 
 export const generateFullBlogPost = async (
     topic: string,
     system: BrandVoiceSystem,
-    research: ResearchData,
-    keywords: KeywordsData,
+    researchData: ResearchData,
+    keywordsData: KeywordsData,
     outline: OutlineSection[],
     platform: Platform
 ): Promise<string> => {
     const prompt = `
-    You are an expert content creator and copywriter, embodying the brand voice defined below. Your task is to write a complete, publish-ready piece of content based on the provided materials.
-
-    **Platform:** ${platform}
-    **Topic:** ${topic}
-
-    **Brand Voice System:**
-    ${JSON.stringify(system, null, 2)}
-
-    **Primary & Secondary Keywords/Hashtags:**
-    - Primary: ${keywords.primary}
-    - Secondary: ${keywords.secondary.join(', ')}
-
-    **Research Insights (to be woven into the text):**
-    ${research.insights.map(i => `- ${i}`).join('\n')}
-
-    **Sources to Cite (if applicable for the platform):**
-    ${research.sources.map((s, i) => `${i + 1}. ${s.title}: ${s.uri}`).join('\n')}
-
-    **Outline with Intent (This is your strict guide):**
-    ${outline.map(o => `- Section: "${o.sectionTitle}"\n  - Intent: ${o.intent}`).join('\n')}
-
-    **Instructions:**
-    1.  **Strictly Follow the Outline:** Each part of your writing must fulfill its stated intent. This is crucial.
-    2.  **Embody the Brand Voice:** Adhere perfectly to the personality, tone, writing style, and vocabulary.
-    3.  **Tailor for the Platform:** The format, length, and style must be perfectly suited for a "${platform}". 
-        -   For an 'Instagram Post', be concise, use emojis, and include relevant hashtags.
-        -   For a 'Blog / Article', write a well-structured, long-form piece (1000-2000 words) using Markdown.
-        -   For 'Ad Copy', be persuasive and direct with a clear call to action.
-    4.  **Integrate Keywords Naturally:** Place the primary and secondary keywords strategically, but avoid "stuffing." The text must read naturally.
-    5.  **Use Research and Cite Sources:** Back up claims using the provided research insights. For platforms like blogs, add a citation marker like [1], [2], etc., and create a "Sources" list at the end. For social media, citations are not typically needed.
-    6.  **Ensure Flow and Transitions:** Write smooth transitions between paragraphs and sections where applicable.
-    7.  **Formatting:** Use Markdown for blogs/articles (H1, H2, lists). For other platforms, use plain text with line breaks for readability.
-    8.  **Output:** Provide only the complete, final text for the specified platform. Do not include any extra commentary.
+    You are a professional content creator. Write the full content for a "${platform}" on the topic "${topic}".
+    
+    **Brand Voice Settings:**
+    - Essence: ${system.essence}
+    - Personality: ${system.personalityTraits.join(', ')}
+    - Tone: ${system.toneGuidelines.map(t => t.name).join(', ')}
+    - Vocabulary Use: ${system.vocabulary.use.join(', ')}
+    - Vocabulary Avoid: ${system.vocabulary.avoid.join(', ')}
+    
+    **SEO Keywords:**
+    - Primary: ${keywordsData.primary}
+    - Secondary: ${keywordsData.secondary.join(', ')}
+    
+    **Research & Citations:**
+    - Incorporate these insights: ${researchData.insights.join('; ')}
+    - **CITATION REQUIREMENT:** You MUST cite the sources for facts and data. Use the Markdown link format: [Source Title](URL).
+    - Sources List:
+    ${researchData.sources.map(s => `- ${s.title}: ${s.uri}`).join('\n')}
+    
+    **Structure:**
+    ${outline.map(s => `### ${s.sectionTitle}\nIntent: ${s.intent}`).join('\n\n')}
+    
+    Write the content in clean Markdown.
     `;
-
+    
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-pro',
-        contents: prompt,
-        config: { temperature: 0.6 }
+        model,
+        contents: prompt
     });
-
+    
     return response.text;
 }
 
+export const generateBlogImage = async (topic: string, system: BrandVoiceSystem): Promise<string | null> => {
+    const prompt = `Create a high-quality, photorealistic header image for a blog post about "${topic}". 
+    The image should reflect the brand essence: "${system.essence}".
+    Style keywords: ${system.personalityTraits.join(', ')}.
+    Do not include text in the image. Cinematic lighting.`;
 
-export const generateCommentReply = async (
-    system: BrandVoiceSystem,
-    platform: Platform,
-    postText: string,
-    comment: string,
-    objective: string
-): Promise<CommentReply> => {
-    const prompt = `
-    You are a community manager who is an expert in the brand voice defined below. Your task is to analyze a comment and generate 3 on-brand reply variations, considering the context of the original post.
+    try {
+        const response = await ai.models.generateImages({
+            model: 'imagen-4.0-generate-001',
+            prompt: prompt,
+            config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/jpeg',
+                aspectRatio: '16:9'
+            }
+        });
+        const base64 = response.generatedImages?.[0]?.image?.imageBytes;
+        return base64 ? `data:image/jpeg;base64,${base64}` : null;
+    } catch (error) {
+        console.error("Image generation error:", error);
+        return null;
+    }
+}
 
-    **Brand Voice System:**
-    ${JSON.stringify(system, null, 2)}
+// --- Helper functions for App.tsx (implied existence in original code) ---
 
-    **Request:**
-    - Platform: "${platform}"
-    - Original Post Content: "${postText}"
-    - User's Comment: "${comment}"
-    - Reply Objective: "${objective || 'Acknowledge and engage positively.'}"
+export const generateTopicSuggestions = async (industry: string, brandName: string): Promise<string[]> => {
+    const prompt = `Generate 5 engaging blog topic ideas for a ${industry} brand named "${brandName}". Return only a JSON array of strings.`;
+    const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+            }
+        }
+    });
+    return JSON.parse(response.text);
+}
 
-    **Instructions:**
-    1.  **Analyze the Comment:** First, determine the sentiment (Positive, Neutral, Negative) and intent (e.g., Question, Praise, Complaint, Feedback) of the user's comment, keeping the original post content in mind for context.
-    2.  **Apply the Brand Voice:** Generate 3 distinct reply variations that strictly follow the brand's personality, tone, and vocabulary. Each reply should be tailored to the platform.
-    3.  **Achieve the Objective:** Ensure the replies meet the stated objective.
-    4.  **Provide Analysis and Notes:** Explain your analysis and offer brief notes on why each reply variation is effective.
-    `;
+export const generateReplyObjectives = async (platform: string, post: string, comment: string): Promise<string[]> => {
+    const prompt = `Given this ${platform} post: "${post}" and this user comment: "${comment}", suggest 3 distinct objectives for a reply (e.g., "Thank and clarify", "Ask a follow-up"). Return JSON array of strings.`;
+    const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+             responseMimeType: "application/json",
+             responseSchema: { type: Type.ARRAY, items: { type: Type.STRING } }
+        }
+    });
+    return JSON.parse(response.text);
+}
 
+export const generateCommentReply = async (system: BrandVoiceSystem, platform: string, post: string, comment: string, objective: string): Promise<CommentReply> => {
+    const prompt = `Write 3 variations of a reply to a comment on ${platform}.
+    Brand Essence: ${system.essence}
+    Tone: ${system.toneGuidelines.map(t => t.name).join(', ')}
+    Post: "${post}"
+    Comment: "${comment}"
+    Objective: "${objective}"
+    
+    Return JSON with 'variations' (array of strings) and 'analysis' (object with sentiment, intent, notes).`;
+    
     const response = await ai.models.generateContent({
         model,
         contents: prompt,
@@ -401,86 +400,14 @@ export const generateCommentReply = async (
                     analysis: {
                         type: Type.OBJECT,
                         properties: {
-                            sentiment: { type: Type.STRING },
+                            sentiment: { type: Type.STRING, enum: ["Positive", "Neutral", "Negative"] },
                             intent: { type: Type.STRING },
-                            notes: { type: Type.STRING, description: "Notes on the strategy behind the replies." }
+                            notes: { type: Type.STRING }
                         }
                     }
                 }
             }
         }
     });
-
     return JSON.parse(response.text);
-};
-
-export const generateTopicSuggestions = async (
-  industry: string,
-  name: string
-): Promise<string[]> => {
-  const prompt = `
-  You are a world-class content strategist and market researcher specializing in the "${industry}" industry.
-  Your task is to generate 5 innovative and high-impact content topic ideas for a brand named "${name}".
-
-  Instructions:
-  1.  Analyze current trends, challenges, and opportunities within the "${industry}" sector.
-  2.  Identify topics that are not only relevant but will also help the brand stand out. Think about unique angles, contrarian viewpoints, or in-depth guides.
-  3.  Frame each idea as a clear and compelling "Topic / Goal" that can be used directly for content creation.
-  4.  The topics should be diverse, suitable for formats like blog posts, social media, or newsletters.
-
-  Provide your output as a JSON array of 5 strings.
-  `;
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-pro',
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING }
-      }
-    }
-  });
-
-  return JSON.parse(response.text);
-};
-
-
-export const generateReplyObjectives = async (
-    platform: Platform,
-    postText: string,
-    commentText: string
-): Promise<string[]> => {
-    const prompt = `
-    You are an expert community manager and social media strategist.
-    Based on the platform, the original post's content, and a user's comment, generate 4 concise and actionable reply objectives.
-
-    - **Platform:** "${platform}"
-    - **Original Post:** "${postText.substring(0, 500)}..."
-    - **User's Comment:** "${commentText}"
-
-    Examples of good objectives:
-    - "Answer the question and upsell a related product."
-    - "Acknowledge praise and encourage user-generated content."
-    - "De-escalate the complaint and move the conversation to DMs."
-    - "Thank for feedback and tag the product team."
-    - "Correct misinformation politely with a source link."
-
-    Your output must be a JSON array of 4 strings.
-    `;
-
-    const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-            }
-        }
-    });
-
-    return JSON.parse(response.text);
-};
+}
